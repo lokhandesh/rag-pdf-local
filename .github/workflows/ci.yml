@@ -1,0 +1,43 @@
+# CI only — no cloud deployment. On every push/PR: lint, test, build the Docker image
+# and smoke-test the running container. The image is kept as a downloadable artifact.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check app scripts tests
+      - run: pytest -q
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t rag-pdf-local:${{ github.sha }} .
+      - name: Smoke test container
+        run: |
+          docker run -d --name rag -p 8000:8000 -e LLM_PROVIDER=none rag-pdf-local:${{ github.sha }}
+          for i in $(seq 1 30); do curl -sf localhost:8000/health && break; sleep 2; done
+          curl -sf localhost:8000/health
+          docker logs rag
+      - name: Save image
+        run: docker save rag-pdf-local:${{ github.sha }} | gzip > rag-pdf-local.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rag-pdf-local-image
+          path: rag-pdf-local.tar.gz
+          retention-days: 7

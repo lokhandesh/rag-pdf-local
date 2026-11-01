@@ -1,0 +1,43 @@
+# Fully local stack: RAG API + Ollama LLM. Nothing leaves your machine.
+#
+#   docker compose up -d --build          # start
+#   docker compose exec ollama ollama pull llama3.2:3b   # first time only
+#   open http://localhost:8000
+#
+# To use Claude instead of Ollama: set LLM_PROVIDER=anthropic and ANTHROPIC_API_KEY in .env,
+# then start only the API:  docker compose up -d --build rag-api
+
+services:
+  rag-api:
+    build: .
+    image: rag-pdf-local:latest
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+    volumes:
+      - ./data/pdfs:/app/data/pdfs        # drop PDFs here
+      - rag-storage:/app/storage          # vector DB persists across restarts
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+    # Uncomment for NVIDIA GPU acceleration:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
+
+volumes:
+  rag-storage:
+  ollama-models:
